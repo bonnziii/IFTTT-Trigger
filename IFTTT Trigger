@@ -1,0 +1,83 @@
+#include <Wire.h>
+#include <BH1750.h>
+#include <WiFiNINA.h>
+#include <ArduinoHttpClient.h>
+
+// WiFi credentials
+char ssid[] = "DODO-8BEF";
+char pass[] = "FLCCVDF5MB";
+int status = WL_IDLE_STATUS;
+
+// IFTTT webhook URLs
+char server[] = "maker.ifttt.com";
+char eventSunlightStarted[] = "Sunlight-Exposure-started";
+char eventSunlightStopped[] = "Sunlight-exposure-stopped";
+char key[] = "lMw082GKSMRbHpCgBfnjeakrl8PNbaNymLW2jUER2YK";
+
+WiFiClient wifiClient;
+HttpClient client = HttpClient(wifiClient, server, 80);
+
+BH1750 lightMeter;
+
+bool isExposed = false; // Flag to track sunlight exposure
+
+void setup() {
+  Serial.begin(9600);
+  delay(2000); // Delay to allow for Serial Monitor to open
+
+  // Initialize the I2C bus
+  Wire.begin();
+
+  // Connect to WiFi network
+  while (status != WL_CONNECTED) {
+    Serial.print("Attempting to connect to Network named: ");
+    Serial.println(ssid);
+    status = WiFi.begin(ssid, pass);
+    delay(10000);  // wait 10 seconds for connection
+  }
+
+  Serial.println("Connected to wifi");
+
+  lightMeter.begin();
+  Serial.println("BH1750 Test begin");
+}
+
+void loop() {
+  float lux = lightMeter.readLightLevel();
+  Serial.print("Light: ");
+  Serial.print(lux);
+  Serial.println(" lx");
+
+  if (!isExposed && lux > 1000) {
+    sendIFTTTNotification(eventSunlightStarted, lux);
+    isExposed = true;
+  } else if (isExposed && lux < 200) {
+    sendIFTTTNotification(eventSunlightStopped, lux);
+    isExposed = false;
+  }
+
+  delay(1000); // check every second
+}
+
+void sendIFTTTNotification(char event[], float luxValue) {
+  Serial.print("Sending notification to IFTTT for event: ");
+  Serial.println(event);
+
+  // Construct the URL with the event name and key
+  String url = "/trigger/" + String(event) + "/with/key/" + String(key);
+
+  // Create the message body with lux value
+  String messageBody = "{\"value1\":\"" + String(luxValue) + "\"}";
+
+  // Send the POST request with the message body
+  int statusCode = client.post(url, "application/json", messageBody);
+  if (statusCode < 0) {
+    Serial.print("Failed to send request, error code: ");
+    Serial.println(statusCode);
+  } else {
+    Serial.print("Notification sent, status code: ");
+    Serial.println(statusCode);
+  }
+
+  client.stop();
+}
